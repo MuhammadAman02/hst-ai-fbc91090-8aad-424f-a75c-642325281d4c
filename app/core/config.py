@@ -1,83 +1,118 @@
-from typing import Any, Dict, List, Optional, Union
+"""
+Configuration settings for ZARA E-commerce Store
+Handles environment variables, database settings, and application configuration
+"""
+
 import os
-from pydantic import AnyHttpUrl, field_validator, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
+from pydantic import BaseSettings, validator
 
 class Settings(BaseSettings):
-    """Application settings.
+    """Application settings with environment variable support"""
     
-    This class uses Pydantic's BaseSettings which automatically reads from environment variables.
-    Environment variables take precedence over values defined in the class.
+    # Application Info
+    app_name: str = "ZARA Fashion Store"
+    app_version: str = "1.0.0"
+    app_description: str = "Premium fashion e-commerce platform"
     
-    Example:
-        If you define PORT=9000 in your environment, it will override the default value of 8000.
-    """
-    # CORE SETTINGS
-    app_name: str = "FastAPI Application"
-    app_description: str = "A modern web application built with FastAPI"
-    app_version: str = "0.1.0"
+    # Server Configuration
+    host: str = "0.0.0.0"
+    port: int = 8080
     debug: bool = False
     
-    # API SETTINGS
-    api_prefix: str = "/api"
-    
-    # SERVER SETTINGS
-    host: str = "0.0.0.0"  # 0.0.0.0 for Docker/production compatibility
-    port: int = 8000
-    
-    # CORS SETTINGS
-    # List of origins that are allowed to make cross-origin requests
-    # Use ["*"] to allow any origin (not recommended for production)
-    cors_origins: List[str] = []
-    
-    # SECURITY SETTINGS
-    # Secret key for signing tokens - MUST be overridden in production
-    secret_key: str = "CHANGEME_IN_PRODUCTION"
-    # Algorithm used for token signing
-    algorithm: str = "HS256"
-    # Token expiration time in minutes
+    # Security
+    secret_key: str = "zara-fashion-store-secret-key-change-in-production"
     access_token_expire_minutes: int = 30
+    algorithm: str = "HS256"
     
-    # DATABASE SETTINGS
-    # Database connection string - override in production
-    database_url: Optional[str] = None
+    # Database
+    database_url: str = "sqlite:///./zara_store.db"
+    database_echo: bool = False
     
-    # STATIC FILES
-    static_dir: str = "app/static"
+    # File Upload
+    upload_dir: str = "uploads"
+    max_file_size: int = 5 * 1024 * 1024  # 5MB
+    allowed_extensions: list = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
     
-    # TEMPLATES
-    templates_dir: str = "app/templates"
+    # Email Configuration (for notifications)
+    smtp_server: Optional[str] = None
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: bool = True
     
-    # Configure Pydantic to use environment variables
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-    )
+    # Payment Configuration (for future integration)
+    stripe_publishable_key: Optional[str] = None
+    stripe_secret_key: Optional[str] = None
+    paypal_client_id: Optional[str] = None
+    paypal_client_secret: Optional[str] = None
     
-    # Validators
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        """Parse CORS origins from string to list.
-        
-        This allows setting CORS_ORIGINS as a comma-separated string in .env file.
-        """
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
-            return v
-        raise ValueError(v)
+    # Image Service Configuration
+    unsplash_access_key: Optional[str] = None
+    image_cache_duration: int = 3600  # 1 hour
+    
+    # Business Configuration
+    default_currency: str = "USD"
+    tax_rate: float = 0.08  # 8%
+    free_shipping_threshold: float = 50.0
+    shipping_cost: float = 5.99
+    
+    # Admin Configuration
+    admin_username: str = "admin"
+    admin_email: str = "admin@zara-store.com"
+    admin_password: str = "admin123"  # Change in production!
+    
+    @validator('debug', pre=True)
+    def parse_debug(cls, v):
+        if isinstance(v, str):
+            return v.lower() in ('true', '1', 'yes', 'on')
+        return v
+    
+    @validator('upload_dir')
+    def create_upload_dir(cls, v):
+        os.makedirs(v, exist_ok=True)
+        return v
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
 
-# Create a global settings instance
+# Global settings instance
 settings = Settings()
 
-# Helper function to get settings as a dictionary
-def get_settings_dict() -> Dict[str, Any]:
-    """Return settings as a dictionary for easy access."""
-    return settings.model_dump()
+# Environment-specific configurations
+class DevelopmentSettings(Settings):
+    """Development environment settings"""
+    debug: bool = True
+    database_echo: bool = True
 
-# Helper function to get a specific setting
-def get_setting(key: str, default: Any = None) -> Any:
-    """Get a specific setting by key with an optional default value."""
-    return getattr(settings, key, default)
+class ProductionSettings(Settings):
+    """Production environment settings"""
+    debug: bool = False
+    database_echo: bool = False
+    
+    @validator('secret_key')
+    def validate_secret_key(cls, v):
+        if v == "zara-fashion-store-secret-key-change-in-production":
+            raise ValueError("Secret key must be changed in production!")
+        return v
+
+class TestingSettings(Settings):
+    """Testing environment settings"""
+    database_url: str = "sqlite:///./test_zara_store.db"
+    debug: bool = True
+
+def get_settings() -> Settings:
+    """Get settings based on environment"""
+    env = os.getenv("ENVIRONMENT", "development").lower()
+    
+    if env == "production":
+        return ProductionSettings()
+    elif env == "testing":
+        return TestingSettings()
+    else:
+        return DevelopmentSettings()
+
+# Use environment-specific settings
+settings = get_settings()
